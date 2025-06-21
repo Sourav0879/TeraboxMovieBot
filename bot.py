@@ -106,7 +106,8 @@ def find_corrected_matches(query_clean, all_movie_titles_data, score_cutoff=70, 
                     corrected_suggestions.append({
                         "title": movie_data["original_title"],
                         "message_id": movie_data["message_id"],
-                        "language": movie_data["language"]
+                        "language": movie_data["language"],
+                        "views_count": movie_data.get("views_count", 0) # ভিউ কাউন্ট যোগ করা হয়েছে
                     })
                     break
     return corrected_suggestions
@@ -120,9 +121,17 @@ async def save_post(_, msg: Message):
     if not text:
         return
 
+    # থাম্বনেল ID সংরক্ষণ
+    thumbnail_file_id = None
+    if msg.photo:
+        thumbnail_file_id = msg.photo.file_id
+    elif msg.video and msg.video.thumbs:
+        thumbnail_file_id = msg.video.thumbs[0].file_id # ভিডিওর প্রথম থাম্বনেল
+
     movie_to_save = {
         "message_id": msg.id,
-        "title": text,
+        "title": text.splitlines()[0], # শুধু প্রথম লাইনটি টাইটেল হিসেবে নিচ্ছি
+        "full_caption": text, # পুরো ক্যাপশন সংরক্ষণ করছি
         "date": msg.date,
         "year": extract_year(text),
         "language": extract_language(text),
@@ -130,7 +139,8 @@ async def save_post(_, msg: Message):
         "views_count": 0,
         "likes": 0,
         "dislikes": 0,
-        "rated_by": []
+        "rated_by": [],
+        "thumbnail_id": thumbnail_file_id # থাম্বনেল ID যোগ করা হয়েছে
     }
     
     result = movies_col.update_one({"message_id": msg.id}, {"$set": movie_to_save}, upsert=True)
@@ -138,17 +148,43 @@ async def save_post(_, msg: Message):
     if result.upserted_id is not None:
         setting = settings_col.find_one({"key": "global_notify"})
         if setting and setting.get("value"):
+            # নোটিফিকেশন মেসেজের জন্য ইনলাইন বাটন তৈরি
+            download_button = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "ডাউনলোড লিংক", # বাটনের টেক্সট
+                        url=f"https://t.me/{app.me.username}?start=watch_{msg.id}" # /start কমান্ডের পেলোড
+                    )
+                ]
+            ])
+            
+            # নোটিফিকেশন টেক্সট
+            notification_caption = f"🎬 **নতুন মুভি আপলোড হয়েছে!**\n\n**{movie_to_save['title']}**\n\nএখনই ডাউনলোড করুন!"
+
             for user in users_col.find({"notify": {"$ne": False}}):
                 try:
-                    m = await app.send_message(
-                        user["_id"],
-                        f"নতুন মুভি আপলোড হয়েছে:\n**{text.splitlines()[0][:100]}**\nএখনই সার্চ করে দেখুন!"
-                    )
+                    if thumbnail_file_id:
+                        # থাম্বনেল সহ ফটো মেসেজ পাঠানো
+                        m = await app.send_photo(
+                            user["_id"],
+                            photo=thumbnail_file_id,
+                            caption=notification_caption,
+                            reply_markup=download_button
+                        )
+                    else:
+                        # যদি থাম্বনেল না থাকে, শুধু টেক্সট মেসেজ পাঠানো
+                        m = await app.send_message(
+                            user["_id"],
+                            notification_caption,
+                            reply_markup=download_button
+                        )
                     asyncio.create_task(delete_message_later(m.chat.id, m.id))
                     await asyncio.sleep(0.05)
                 except Exception as e:
-                    if "PEER_ID_INVALID" in str(e) or "USER_IS_BOT" in str(e) or "USER_DEACTIVATED_REQUIRED" in str(e):
+                    if "PEER_ID_INVALID" in str(e) or "USER_IS_BOT" in str(e) or "USER_DEACTIVATED_REQUIRED" in str(e) or "BOT_BLOCKED" in str(e):
                         print(f"Skipping notification to invalid/blocked user {user['_id']}: {e}")
+                        # ব্যবহারকারী ব্লক করলে ডাটাবেজ থেকে notify ফ্ল্যাগ false করে দিতে পারেন
+                        users_col.update_one({"_id": user["_id"]}, {"$set": {"notify": False}})
                     else:
                         print(f"Failed to send notification to user {user['_id']}: {e}")
 
@@ -165,10 +201,11 @@ async def start(_, msg: Message):
 
     user_last_start_time[user_id] = current_time
 
+    # নতুন মুভি ফরওয়ার্ড করার লজিক
     if len(msg.command) > 1 and msg.command[1].startswith("watch_"):
         message_id = int(msg.command[1].replace("watch_", ""))
         try:
-            # app.forward_messages এর পরিবর্তে app.copy_message ব্যবহার করা হয়েছে
+            # app.copy_message ব্যবহার করা হয়েছে, এতে কন্টেন্ট প্রটেকশন বজায় থাকে
             copied_message = await app.copy_message(
                 chat_id=msg.chat.id,        # যেখানে মেসেজটি পাঠানো হবে (ইউজারের চ্যাট)
                 from_chat_id=CHANNEL_ID,    # যেখান থেকে মেসেজটি কপি করা হবে (আপনার চ্যানেল)
@@ -187,6 +224,7 @@ async def start(_, msg: Message):
                         InlineKeyboardButton(f"👎 ডিসলাইক ({dislikes_count})", callback_data=f"dislike_{message_id}_{user_id}")
                     ]
                 ])
+                # রেটিং মেসেজটি মুভির নিচে রিপ্লাই হিসেবে পাঠানো হয়েছে
                 rating_message = await app.send_message(
                     chat_id=msg.chat.id,
                     text="মুভিটি কেমন লাগলো? রেটিং দিন:",
@@ -205,8 +243,9 @@ async def start(_, msg: Message):
             error_msg = await msg.reply_text("মুভিটি খুঁজে পাওয়া যায়নি বা লোড করা যায়নি।")
             asyncio.create_task(delete_message_later(error_msg.chat.id, error_msg.id))
             print(f"Error copying message from start payload: {e}")
-        return
+        return # এখানে রিটার্ন করা হয়েছে যাতে নরমাল স্টার্ট মেসেজ না যায়
 
+    # যদি কোনো পেলোড না থাকে, তাহলে এটি নরমাল /start কমান্ডের হ্যান্ডলার
     users_col.update_one(
         {"_id": msg.from_user.id},
         {"$set": {"joined": datetime.now(UTC), "notify": True}},
@@ -553,6 +592,7 @@ async def callback_handler(_, cq: CallbackQuery):
         await cq.answer("বাতিল করা হয়েছে।")
 
     elif data.startswith("movie_"):
+        # এই কলব্যাক ডেটা এখন সম্ভবত অপ্রয়োজনীয়, কারণ আমরা /start পেলোড ব্যবহার করছি
         await cq.answer("মুভিটি ফরওয়ার্ড করার জন্য আমাকে ব্যক্তিগতভাবে মেসেজ করুন।", show_alert=True)
 
     elif data.startswith("lang_"):
@@ -649,7 +689,11 @@ async def callback_handler(_, cq: CallbackQuery):
             await cq.answer("দুঃখিত, এই মুভিটি খুঁজে পাওয়া যায়নি।", show_alert=True)
             return
 
-        if user_id in movie.get("rated_by", []):
+        # Ensure rated_by exists as a list
+        if "rated_by" not in movie:
+            movie["rated_by"] = []
+
+        if user_id in movie["rated_by"]:
             await cq.answer("আপনি ইতিমধ্যেই এই মুভিতে রেটিং দিয়েছেন!", show_alert=True)
             return
 
