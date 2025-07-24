@@ -1,3 +1,11 @@
+#
+# ----------------------------------------------------
+# Developed by: Ctgmovies23
+# Telegram Username: @ctgmovies23
+# Channel Link: https://t.me/AllBotUpdatemy
+# ----------------------------------------------------
+#
+
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pymongo import MongoClient, ASCENDING
@@ -59,6 +67,16 @@ movies_col.create_index([("title_clean", ASCENDING)], background=True)
 movies_col.create_index([("language", ASCENDING), ("title_clean", ASCENDING)], background=True)
 movies_col.create_index([("views_count", ASCENDING)], background=True)
 print("All other necessary indexes ensured successfully.")
+
+# Ensure the protect_forwarding setting exists and is True by default
+# True মানে কন্টেন্ট প্রোটেক্টেড, অর্থাৎ ফরওয়ার্ড করা যাবে না।
+settings_col.update_one(
+    {"key": "protect_forwarding"},
+    {"$setOnInsert": {"value": True}},
+    upsert=True
+)
+print("Forwarding protection setting ensured in database.")
+
 
 # Flask App for health check
 flask_app = Flask(__name__)
@@ -201,16 +219,21 @@ async def start(_, msg: Message):
 
     user_last_start_time[user_id] = current_time
 
-    # নতুন মুভি ফরওয়ার্ড করার লজিক
+    # মুভি ফরওয়ার্ড করার লজিক
     if len(msg.command) > 1 and msg.command[1].startswith("watch_"):
         message_id = int(msg.command[1].replace("watch_", ""))
+        
+        # protect_forwarding সেটিং চেক করুন
+        protect_setting = settings_col.find_one({"key": "protect_forwarding"})
+        # ডিফল্ট True ধরে নেওয়া হয়েছে যদি সেটিং না থাকে, অর্থাৎ কন্টেন্ট প্রটেক্টেড থাকবে।
+        should_protect = protect_setting.get("value", True) if protect_setting else True
+
         try:
-            # app.copy_message ব্যবহার করা হয়েছে, এতে কন্টেন্ট প্রটেকশন বজায় থাকে
             copied_message = await app.copy_message(
                 chat_id=msg.chat.id,        # যেখানে মেসেজটি পাঠানো হবে (ইউজারের চ্যাট)
                 from_chat_id=CHANNEL_ID,    # যেখান থেকে মেসেজটি কপি করা হবে (আপনার চ্যানেল)
                 message_id=message_id,      # মূল মেসেজের আইডি
-                protect_content=True        # কন্টেন্ট সুরক্ষা নিশ্চিত করতে
+                protect_content=should_protect # protect_content এখন ডাটাবেস সেটিং থেকে আসবে
             )
             
             movie_data = movies_col.find_one({"message_id": message_id})
@@ -255,7 +278,15 @@ async def start(_, msg: Message):
         [InlineKeyboardButton("আপডেট চ্যানেল", url=UPDATE_CHANNEL)],
         [InlineKeyboardButton("অ্যাডমিনের সাথে যোগাযোগ", url="https://t.me/ctgmovies23")]
     ])
-    start_message = await msg.reply_photo(photo=START_PIC, caption="আমাকে মুভির নাম লিখে পাঠান, আমি খুঁজে দেবো।", reply_markup=btns)
+    start_message = await msg.reply_photo(
+        photo=START_PIC,
+        caption="""আমাকে মুভির নাম লিখে পাঠান, আমি খুঁজে দেবো।
+
+Developed by: **Ctgmovies23**
+Telegram: @ctgmovies23
+Channel: [All Bot Update My](https://t.me/AllBotUpdatemy)""", # এখানে আপনার ক্রেডিট যোগ করা হয়েছে
+        reply_markup=btns
+    )
     asyncio.create_task(delete_message_later(start_message.chat.id, start_message.id))
 
 @app.on_message(filters.command("feedback") & filters.private)
@@ -296,10 +327,14 @@ async def broadcast(_, msg: Message):
 @app.on_message(filters.command("stats") & filters.user(ADMIN_IDS))
 async def stats(_, msg: Message):
     stats_msg = await msg.reply(
-        f"মোট ব্যবহারকারী: {users_col.count_documents({})}\n"
-        f"মোট মুভি: {movies_col.count_documents({})}\n"
-        f"মোট ফিডব্যাক: {feedback_col.count_documents({})}\n"
-        f"মোট অনুরোধ: {requests_col.count_documents({})}"
+        f"""মোট ব্যবহারকারী: {users_col.count_documents({})}
+মোট মুভি: {movies_col.count_documents({})}
+মোট ফিডব্যাক: {feedback_col.count_documents({})}
+মোট অনুরোধ: {requests_col.count_documents({})}
+
+Developed by: **Ctgmovies23**
+Telegram: @ctgmovies23
+Channel: [All Bot Update My](https://t.me/AllBotUpdatemy)""" # এখানে আপনার ক্রেডিট যোগ করা হয়েছে
     )
     asyncio.create_task(delete_message_later(stats_msg.chat.id, stats_msg.id))
 
@@ -318,6 +353,28 @@ async def notify_command(_, msg: Message):
     status = "চালু" if new_value else "বন্ধ"
     reply_msg = await msg.reply(f"✅ গ্লোবাল নোটিফিকেশন {status} করা হয়েছে!")
     asyncio.create_task(delete_message_later(reply_msg.chat.id, reply_msg.id))
+
+# ফরওয়ার্ডিং প্রোটেকশন টগল কমান্ড
+@app.on_message(filters.command("forward_toggle") & filters.user(ADMIN_IDS))
+async def toggle_forward_protection(_, msg: Message):
+    if len(msg.command) != 2 or msg.command[1] not in ["on", "off"]:
+        error_msg = await msg.reply("ব্যবহার: /forward_toggle on (ফরওয়ার্ডিং বন্ধ) অথবা /forward_toggle off (ফরওয়ার্ডিং চালু)")
+        asyncio.create_task(delete_message_later(error_msg.chat.id, error_msg.id))
+        return
+    
+    # "on" মানে প্রোটেকশন চালু, অর্থাৎ ফরওয়ার্ড করা যাবে না (protect_content=True)
+    # "off" মানে প্রোটেকশন বন্ধ, অর্থাৎ ফরওয়ার্ড করা যাবে (protect_content=False)
+    new_value_for_protect_content = True if msg.command[1] == "on" else False
+    
+    settings_col.update_one(
+        {"key": "protect_forwarding"},
+        {"$set": {"value": new_value_for_protect_content}},
+        upsert=True
+    )
+    status = "বন্ধ" if new_value_for_protect_content else "চালু"
+    reply_msg = await msg.reply(f"✅ ইউজারদের জন্য মুভি ফরওয়ার্ডিং {status} করা হয়েছে! (প্রোটেকশন {'চালু' if new_value_for_protect_content else 'বন্ধ'})")
+    asyncio.create_task(delete_message_later(reply_msg.chat.id, reply_msg.id))
+
 
 @app.on_message(filters.command("delete_movie") & filters.user(ADMIN_IDS))
 async def delete_specific_movie(_, msg: Message):
