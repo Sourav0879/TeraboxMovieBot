@@ -25,14 +25,14 @@ API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 RESULTS_COUNT = int(os.getenv("RESULTS_COUNT", 10))
-ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(",")))
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "6366880905,7023006442").split(",")))
 DATABASE_URL = os.getenv("DATABASE_URL")
-UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "https://t.me/CTGMovieOfficial")
-START_PIC = os.getenv("START_PIC", "https://i.ibb.co/prnGXMr3/photo-2025-05-16-05-15-45-7504908428624527364.jpg")
+UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "https://t.me/Luxebotupdate")
+START_PIC = os.getenv("START_PIC", "https://i.ibb.co/YHL8SZC/photo-2025-07-21-19-34-14-7529620798567350296.jpg")
 
 # নতুন ডিলিট টাইম সেটিংস (সময় সেকেন্ডে)
 MOVIE_DELETE_DELAY = int(os.getenv("MOVIE_DELETE_DELAY_SECONDS", 300))          # ডিফল্ট: 12 ঘণ্টা
-NOTIFICATION_DELETE_DELAY = int(os.getenv("NOTIFICATION_DELETE_DELAY_SECONDS", 86400)) # ডিফল্ট: 24 ঘণ্টা
+NOTIFICATION_DELETE_DELAY = int(os.getenv("NOTIFICATION_DELETE_DELAY_SECONDS", 72000)) # ডিফল্ট: 24 ঘণ্টা
 TEMP_MSG_DELETE_DELAY = int(os.getenv("TEMP_MSG_DELETE_DELAY_SECONDS", 300))     # ডিফল্ট: 5 মিনিট
 
 app = Client("movie_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -234,7 +234,7 @@ async def start(_, msg: Message):
                     ]
                 ])
                 rating_message = await app.send_message(
-                    chat_id=msg.chat.id, text="মুভিটি কেমন লাগলো? রেটিং দিন:",
+                    chat_id=msg.chat.id, text="This File is deleting automatically in 20 minutes. Forward in your Saved Messages..",
                     reply_markup=rating_buttons, reply_to_message_id=copied_message.id
                 )
                 asyncio.create_task(delete_message_later(rating_message.chat.id, rating_message.id, MOVIE_DELETE_DELAY))
@@ -255,15 +255,15 @@ async def start(_, msg: Message):
     )
     btns = InlineKeyboardMarkup([
         [InlineKeyboardButton("আপডেট চ্যানেল", url=UPDATE_CHANNEL)],
-        [InlineKeyboardButton("অ্যাডমিনের সাথে যোগাযোগ", url="https://t.me/ctgmovies23")]
+        [InlineKeyboardButton("অ্যাডমিনের সাথে যোগাযোগ", url="https://t.me/Luxebotupdate")]
     ])
     start_message = await msg.reply_photo(
         photo=START_PIC,
         caption="""আমাকে মুভির নাম লিখে পাঠান, আমি খুঁজে দেবো।
 
-Developed by: **Ctgmovies23**
-Telegram: @ctgmovies23
-Channel: [All Bot Update My](https://t.me/AllBotUpdatemy)""",
+Developed by: **Boro Vai**
+Telegram: @bdmoviezonepro
+Channel: [All Update](https://t.me/LuxeFlix)""",
         reply_markup=btns
     )
     asyncio.create_task(delete_message_later(start_message.chat.id, start_message.id, TEMP_MSG_DELETE_DELAY))
@@ -310,9 +310,9 @@ async def stats(_, msg: Message):
 মোট ফিডব্যাক: {feedback_col.count_documents({})}
 মোট অনুরোধ: {requests_col.count_documents({})}
 
-Developed by: **Ctgmovies23**
-Telegram: @ctgmovies23
-Channel: [All Bot Update My](https://t.me/AllBotUpdatemy)"""
+Developed by: **Boro vai**
+Telegram: @bdmoviezonepro
+Channel: [All Update](https://t.me/LuxeFlix)"""
     )
     asyncio.create_task(delete_message_later(stats_msg.chat.id, stats_msg.id, TEMP_MSG_DELETE_DELAY))
 
